@@ -33,5 +33,5 @@ public class OrderController {
     public MaterialResponse removeMaterial(@PathVariable String code) { return service.updateMaterial(code, "DELETE"); }
 
     @GetMapping("/material")
-    public MaterialResponse getMachine(@PathVariable String code) { return service.getMachine(); }
+    public MaterialResponse getMachine() { return service.getMachine(); }
 }
