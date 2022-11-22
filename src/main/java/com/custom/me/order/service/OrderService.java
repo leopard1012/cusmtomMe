@@ -22,26 +22,22 @@ import java.util.Map;
 @Slf4j
 @RequiredArgsConstructor
 public class OrderService {
-    private LocalDateTime processDt = LocalDateTime.of(2022,8,1,9,0,0);
-    private Map<String, Integer> machine = new HashMap<>(); // Map.of("A",200, "B",200, "C", 200, "D", 200);
-    private int todayProductCount = 0;
-    private boolean available = true;
-    private LocalDateTime refillStartDt = null;
-
-    private boolean isClose = false;
+    private LocalDateTime processDt = LocalDateTime.of(2022,8,1,9,0,0); // 프로그램시간
+    private Map<String, Integer> machine = new HashMap<>(); // 설비(원료)
+    private int todayProductCount = 0; // 당일 생산한 제품수
+    private boolean available = true; // 생산가능여부
+    private LocalDateTime refillStartDt = null; // 원료보충 시작시간
+    private boolean isClose = false; // 근무시간 종료여부
 
     private final ProductRepository productRepository;
 
-    /*
-        제품생산에 걸리는 시간 : 1초(1분)
-     */
-
     public OrderResponse order(OrderRequest request) {
         OrderResponse response = new OrderResponse();
-        String orderDate = "20" + request.getOrder_date();
+        String orderDate = "20" + request.getOrder_date(); // 샘플 request에 date 형식이 yyMMdd 형태로 앞에 "20" 붙힘
 
         String processToday = processDt.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        if (!processToday.equals(orderDate)) { // 주문일이 잘못됨 (시스템상 당일이 아님)
+        // 주문일이 잘못됨 (시스템상 당일이 아님)
+        if (!processToday.equals(orderDate)) {
             response.setOrder_number(request.getOrder_number());
             response.setOrder(request.getOrder());
             response.setError("주문일이 잘못되었습니다.");
@@ -58,7 +54,7 @@ public class OrderService {
 
         Product preProduct = productRepository.findByOrderNumber(request.getOrder_number()).orElse(null);
 
-        if (preProduct != null) { // 주문번호는 고유값 중복되면 에러
+        if (preProduct != null) { // 주문번호는 고유값으로 중복되면 에러
             response.setOrder_number(request.getOrder_number());
             response.setOrder(request.getOrder());
             response.setError("이미등록된 주문번호입니다.");
@@ -78,11 +74,13 @@ public class OrderService {
             response.setOrder(product.getOrderCode());
             response.setStatus("주문접수");
             response.setSend_date(sendDate);
-            if (delay >= 7) {
+            if (delay >= 7) { // 발송예정일이 주문일에서 7일이상 지연될경우 취소처리
                 product.setOrderStatus("생산지연");
                 response.setStatus("생산지연");
                 response.setError("생산지연으로 인한 주문취소");
             }
+
+            // 기본적으로 접수가 들어오는 주문은 "주문접수"상태로 Queue 형식으로 입력되며 machineRun을 통하여 순차적으로 처리하여 상태변경
             product.setSendDate(sendDate);
             productRepository.save(product);
             log.info("주문접수 number={}, code={}", product.getOrderNumber(), product.getOrderCode());
@@ -120,7 +118,7 @@ public class OrderService {
         if (materialCode.length() == 1 &&
                 (  (materialCode.charAt(0) >= 65 && materialCode.charAt(0) <= 90)
                 || (materialCode.charAt(0) >= 97 && materialCode.charAt(0) <= 122) )
-        ) {
+        ) { // 원료가 알파벳(A~Z,a~z) 1자리일 경우
             if (type.equals("DELETE")) {
                 if (machine.remove(materialCode) == null) {
                     response.setResult("존재하지 않은 효능입니다.");
@@ -128,7 +126,7 @@ public class OrderService {
                     response.setResult("원료삭제");
                 }
             } else {
-                if (machine.containsKey(materialCode) && machine.get(materialCode) == 200) { // 이미 가득차 있는 경우
+                if (machine.containsKey(materialCode) && machine.get(materialCode) == 200) {
                     response.setResult("원료가 이미가득차 있습니다.");
                 } else {
                     if (!machine.containsKey(materialCode) && machine.size() >= 10) {
@@ -148,40 +146,41 @@ public class OrderService {
         return response;
     }
 
+    // 입력된 효능에 대한 validation 체크
     private boolean checkOrderCode(String orderCode) {
-        if (orderCode.length() == 3) {
+        if (orderCode.length() == 3) { // 효능코드가 3자리 이 경우 반드시 1개원료이며 비율은 10
             if ((orderCode.charAt(0) >= 65 && orderCode.charAt(0) <= 90)
-                    || (orderCode.charAt(0) >= 97 && orderCode.charAt(0) <= 122)) {
+                    || (orderCode.charAt(0) >= 97 && orderCode.charAt(0) <= 122)) { // A~Z,a~z
                 try {
                     int need = Integer.parseInt(orderCode.substring(1, 3));
                     if (need == 10) return true;
                     else return false;
-                } catch (Exception e) {
+                } catch (Exception e) { // int형으로 변화가 되지 않는다는 건 잘못된 코드
                     return false;
                 }
             } else { // 알파벳이 아닐경우
                 return false;
             }
-        } else if (orderCode.length() == 4) {
+        } else if (orderCode.length() == 4) { // 효능코드가 4자리인 경우 1,3번째 는 알파벳, 2,4는 숫자 (합이 10)
             String[] arCode = orderCode.split("");
             int need1, need2;
             if ((arCode[0].charAt(0) >= 65 && arCode[0].charAt(0) <= 90)
-                    || (arCode[0].charAt(0) >= 97 && arCode[0].charAt(0) <= 122)) {
+                    || (arCode[0].charAt(0) >= 97 && arCode[0].charAt(0) <= 122)) { // A~Z,a~z
                 try {
                     need1 = Integer.parseInt(arCode[1]);
                     if (need1 >= 10 || need1 < 1) return false;
-                } catch (Exception e) {
+                } catch (Exception e) { // int형으로 변화가 되지 않는다는 건 잘못된 코드
                     return false;
                 }
             } else { // 알파벳이 아닐경우
                 return false;
             }
             if ((arCode[2].charAt(0) >= 65 && arCode[2].charAt(0) <= 90)
-                    || (arCode[2].charAt(0) >= 97 && arCode[2].charAt(0) <= 122)) {
+                    || (arCode[2].charAt(0) >= 97 && arCode[2].charAt(0) <= 122)) { // A~Z,a~z
                 try {
                     need2 = Integer.parseInt(arCode[3]);
                     if (need2 >= 10 || need2 < 1) return false;
-                } catch (Exception e) {
+                } catch (Exception e) { // int형으로 변화가 되지 않는다는 건 잘못된 코드
                     return false;
                 }
             } else { // 알파벳이 아닐경우
@@ -202,18 +201,16 @@ public class OrderService {
             int need2 = Integer.parseInt(arCode[3]);
 
             if (machine.containsKey(arCode[0]) && machine.containsKey(arCode[2])) { // 원료가 존재할 경우
-
                 if (machine.get(arCode[0]) >= need1 && machine.get(arCode[2]) >= need2) { // 효능생산가능
                     machine.put(arCode[0], machine.get(arCode[0]) - need1);
                     machine.put(arCode[2], machine.get(arCode[2]) - need2);
                     return 1;
-                } else {
+                } else { // 원료는 있으나 부족함
                     return 0;
                 }
-            } else {
+            } else { // 없는 원료
                 return -1;
             }
-
         } else {
             String code = orderCode.substring(0,1);
 
@@ -232,9 +229,9 @@ public class OrderService {
 
     @Transactional
     @Scheduled(cron = "0/1 * * * * *")
-    public void convDate() {
+    public void machineRun() {
         if (processDt.equals(LocalDateTime.of(2022,8,1,9,0,0))) {
-            // 맨처음 초기화
+            // 프로그램 시작시 기본원료 가득채움
             machine.put("A",200);
             machine.put("B",200);
             machine.put("C",200);
@@ -299,7 +296,5 @@ public class OrderService {
             processDt = processDt.plusMinutes(32);
             available = false;
         }
-
-//        log.info("현재시각 : {}, 처리된 물량 : {}", processDt, todayProductCount);
     }
 }
